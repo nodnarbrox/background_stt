@@ -252,4 +252,3 @@ class BackgroundSttPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Request
         return false
     }
 }
-
