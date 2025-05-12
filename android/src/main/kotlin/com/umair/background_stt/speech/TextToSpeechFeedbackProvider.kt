@@ -50,8 +50,18 @@ class TextToSpeechFeedbackProvider constructor(val context: Context) {
 
                         if (ttsLang == TextToSpeech.LANG_MISSING_DATA || ttsLang == TextToSpeech.LANG_NOT_SUPPORTED) {
                             Log.i(TAG, "The Language is not supported!")
+                        } else {
+                            // Set default speech parameters for better audibility
+                            textToSpeech?.setPitch(1.0f)  // Normal pitch
+                            textToSpeech?.setSpeechRate(0.9f)  // Slightly slower for clarity
+                            
+                            // Set max volume for TTS
+                            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                            val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, maxVolume, 0)
+                            
+                            Log.i(TAG, "Text-to-Speech Initialized with enhanced volume settings.")
                         }
-                        Log.i(TAG, "Text-to-Speech Initialized.")
                     } else {
                         Log.e(TAG, "Text-to-Speech Initialization failed.")
                     }
@@ -59,23 +69,29 @@ class TextToSpeechFeedbackProvider constructor(val context: Context) {
 
         textToSpeech?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onDone(utteranceId: String?) {
+                Log.d(TAG, "TTS onDone: Speech completed for utterance: $utteranceId")
                 SpeechListenService.isSpeaking = false
                 doOnSpeechComplete()
             }
 
             override fun onError(utteranceId: String?) {
+                Log.e(TAG, "TTS onError: Speech error for utterance: $utteranceId")
                 SpeechListenService.isSpeaking = false
                 doOnSpeechComplete()
             }
 
             override fun onStart(utteranceId: String?) {
+                Log.d(TAG, "TTS onStart: Starting speech for utterance: $utteranceId")
                 SpeechListenService.isSpeaking = true
-                context.adjustSound(AudioManager.ADJUST_RAISE, forceAdjust = true)
+                
+                // Maximize volume when speaking
+                for (i in 0..3) {
+                    handler.postDelayed({
+                        context.adjustSound(AudioManager.ADJUST_RAISE, forceAdjust = true)
+                    }, i * 100L)
+                }
             }
-
         });
-
-
     }
 
     fun disposeTextToSpeech() {
@@ -84,6 +100,7 @@ class TextToSpeechFeedbackProvider constructor(val context: Context) {
     }
 
     fun speak(text: String, forceMode: Boolean = false, queue: Boolean = true) {
+        Log.d(TAG, "speak: Starting TTS with text: '$text', forceMode: $forceMode, queue: $queue")
 
         if (forceMode) {
             Speech.getInstance().stopListening()
@@ -93,16 +110,26 @@ class TextToSpeechFeedbackProvider constructor(val context: Context) {
                 Speech.getInstance().stopListening()
                 isListening = false
                 callTextToSpeech(text, queue)
+            } else {
+                Log.d(TAG, "speak: Already speaking, skipping text: '$text'")
             }
         }
     }
 
     fun setSpeaker(pitch: Float, rate: Float) {
+        Log.d(TAG, "setSpeaker: Setting pitch to $pitch and rate to $rate")
         textToSpeech?.setPitch(pitch)
         textToSpeech?.setSpeechRate(rate)
     }
 
     private fun callTextToSpeech(text: String, queue: Boolean) {
+        Log.d(TAG, "callTextToSpeech: Speaking text: '$text', queue: $queue")
+        
+        // Ensure maximum volume before speaking
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, maxVolume, 0)
+        
         if (queue) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 textToSpeech?.speak(text, TextToSpeech.QUEUE_ADD, null, text)
@@ -121,6 +148,7 @@ class TextToSpeechFeedbackProvider constructor(val context: Context) {
     private fun doOnSpeechComplete() {
         handler.postDelayed({
             if (!textToSpeech?.isSpeaking!!) {
+                Log.d(TAG, "doOnSpeechComplete: Speech completed, processing next steps")
                 if (!voiceReplyProvided) {
                     waitingForVoiceInput = false
                 }
@@ -132,7 +160,11 @@ class TextToSpeechFeedbackProvider constructor(val context: Context) {
     fun resumeSpeechService() {
         Log.i(TAG, "Listening to voice commands..")
         isListening = true
-        context.adjustSound(AudioManager.ADJUST_MUTE, forceAdjust = true)
+        
+        // Don't mute audio when resuming speech recognition
+        // Just lower it slightly to improve recognition
+        context.adjustSound(AudioManager.ADJUST_LOWER, forceAdjust = false)
+        
         SpeechListenService.startListening()
     }
 
@@ -141,10 +173,14 @@ class TextToSpeechFeedbackProvider constructor(val context: Context) {
     }
 
     fun cancelConfirmation(now: Boolean = false) {
+        Log.d(TAG, "cancelConfirmation: Cancelling confirmation, now: $now")
         if (now) {
             resetConfirmation()
             Log.i(TAG, "Confirmation cancelled.")
-            context.adjustSound(AudioManager.ADJUST_MUTE)
+            
+            // Don't mute audio, just lower it
+            context.adjustSound(AudioManager.ADJUST_LOWER)
+            
             SpeechListenService.startListening()
         } else {
             if (confirmationProvided) {
@@ -160,9 +196,12 @@ class TextToSpeechFeedbackProvider constructor(val context: Context) {
         confirmationInProgress = true
         confirmationIntent = ConfirmIntent(confirmationText, positiveCommand, negativeCommand, voiceInputMessage, voiceInput)
         waitingForVoiceInput = voiceInput
+        
+        Log.d(TAG, "setConfirmationData: Set confirmation with text: '$confirmationText', positive: '$positiveCommand', negative: '$negativeCommand'")
     }
 
     fun doOnConfirmationProvided(text: String) {
+        Log.d(TAG, "doOnConfirmationProvided: Received confirmation text: '$text'")
         if (text.isNotEmpty()) {
             if (confirmationInProgress) {
                 confirmationIntent?.let { confirmationIntent ->
@@ -219,6 +258,7 @@ class TextToSpeechFeedbackProvider constructor(val context: Context) {
     }
 
     private fun doForVoiceInput(text: String) {
+        Log.d(TAG, "doForVoiceInput: Processing voice input: '$text', voiceReplyProvided: $voiceReplyProvided, waitingForVoiceInput: $waitingForVoiceInput")
         if (!voiceReplyProvided) {
             if (!waitingForVoiceInput) {
 
@@ -246,6 +286,7 @@ class TextToSpeechFeedbackProvider constructor(val context: Context) {
     }
 
     private fun sendConfirmation(reply: String, isSuccess: Boolean, voiceInputMessage: String) {
+        Log.d(TAG, "sendConfirmation: Sending confirmation, reply: '$reply', isSuccess: $isSuccess")
         confirmationIntent?.let {
             val result = ConfirmationResult(it.confirmationIntent, reply, voiceInputMessage, isSuccess).toString()
             EventBus.getDefault().post(SpeechResultEvent(result, false))
@@ -262,6 +303,7 @@ class TextToSpeechFeedbackProvider constructor(val context: Context) {
     }
 
     private fun resetConfirmation() {
+        Log.d(TAG, "resetConfirmation: Resetting confirmation state")
         confirmationInProgress = false
         confirmationProvided = true
         waitingForVoiceInput = false
