@@ -71,12 +71,14 @@ class TextToSpeechFeedbackProvider constructor(val context: Context) {
             override fun onDone(utteranceId: String?) {
                 Log.d(TAG, "TTS onDone: Speech completed for utterance: $utteranceId")
                 SpeechListenService.isSpeaking = false
+                // Immediately process speech completion without delay
                 doOnSpeechComplete()
             }
 
             override fun onError(utteranceId: String?) {
                 Log.e(TAG, "TTS onError: Speech error for utterance: $utteranceId")
                 SpeechListenService.isSpeaking = false
+                // Immediately process speech completion without delay
                 doOnSpeechComplete()
             }
 
@@ -146,15 +148,20 @@ class TextToSpeechFeedbackProvider constructor(val context: Context) {
     }
 
     private fun doOnSpeechComplete() {
-        handler.postDelayed({
-            if (!textToSpeech?.isSpeaking!!) {
-                Log.d(TAG, "doOnSpeechComplete: Speech completed, processing next steps")
-                if (!voiceReplyProvided) {
-                    waitingForVoiceInput = false
-                }
-                resumeSpeechService()
+        // Immediately process when TTS is done without any delay
+        if (!textToSpeech?.isSpeaking!!) {
+            Log.d(TAG, "doOnSpeechComplete: Speech completed, immediately resuming speech recognition")
+            if (!voiceReplyProvided) {
+                waitingForVoiceInput = false
             }
-        }, 300)
+            // Start listening immediately
+            resumeSpeechService()
+        } else {
+            // In case TTS is somehow still speaking, check again after a very brief delay
+            handler.postDelayed({
+                doOnSpeechComplete()
+            }, 50)
+        }
     }
 
     fun resumeSpeechService() {
@@ -165,6 +172,7 @@ class TextToSpeechFeedbackProvider constructor(val context: Context) {
         // Just lower it slightly to improve recognition
         context.adjustSound(AudioManager.ADJUST_LOWER, forceAdjust = false)
         
+        // Start listening immediately
         SpeechListenService.startListening()
     }
 
