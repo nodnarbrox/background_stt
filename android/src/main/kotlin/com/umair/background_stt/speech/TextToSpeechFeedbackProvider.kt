@@ -9,12 +9,13 @@ import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
-import com.umair.background_stt.BackgroundSttPlugin
 import com.umair.background_stt.R
 import com.umair.background_stt.SpeechListenService
 import com.umair.background_stt.adjustSound
 import com.umair.background_stt.models.ConfirmIntent
 import com.umair.background_stt.models.ConfirmationResult
+import com.umair.background_stt.SpeechResultEvent
+import org.greenrobot.eventbus.EventBus
 import java.util.*
 
 
@@ -246,7 +247,8 @@ class TextToSpeechFeedbackProvider constructor(val context: Context) {
 
     private fun sendConfirmation(reply: String, isSuccess: Boolean, voiceInputMessage: String) {
         confirmationIntent?.let {
-            BackgroundSttPlugin.eventSink?.success(ConfirmationResult(it.confirmationIntent, reply, voiceInputMessage, isSuccess).toString())
+            val result = ConfirmationResult(it.confirmationIntent, reply, voiceInputMessage, isSuccess).toString()
+            EventBus.getDefault().post(SpeechResultEvent(result, false))
             Log.i(TAG, "sendConfirmation: Confirmation sent.")
 
             this.confirmationIntent = null
